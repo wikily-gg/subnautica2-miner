@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+
+# Local config — never commit user paths or keys
+.env
+
+# Build / packaging
+*.egg-info/
+build/
+dist/
+
+# Generated extraction outputs (very large + recreatable)
+out/
+*.json
+!*.geojson.example
+*.png
+*.jpg
+*.pdf
+
+# but keep these specific committed examples / docs
+!docs/*.png
+!docs/*.geojson
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Oodle DLL (Subnautica's IoStore needs it — bootstrap downloads at runtime)
+oo2core_*.dll
+oodle-data-shared.dll
