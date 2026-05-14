@@ -35,6 +35,9 @@ from extractors import world_map as ex_world  # noqa: E402
 from extractors import biomes as ex_biomes  # noqa: E402
 from extractors import regions as ex_regions  # noqa: E402
 from extractors import vehicles as ex_vehicles  # noqa: E402
+from extractors import landscape_heights as ex_landscape_heights  # noqa: E402
+from extractors import seafloor_mesh as ex_seafloor_mesh  # noqa: E402
+from extractors import creature_spawns as ex_creature_spawns  # noqa: E402
 
 # Icons / R2 upload are pulled in lazily so JSON-only runs don't hard-fail
 # if Pillow / texture2ddecoder / boto3 aren't installed.
@@ -124,6 +127,12 @@ def run_full(provider, only: set[str] | None = None) -> None:
         _write("regions", result["regions"])
         _write("region_zones", result["zones"])
         _write("biome_points_v2", result["classified"])
+    if _enabled("terrain"):
+        _write("terrain_heights", ex_landscape_heights.run(provider))
+    if _enabled("seafloor"):
+        _write("seafloor_mesh", ex_seafloor_mesh.run(provider))
+    if _enabled("creature_spawns"):
+        _write("creature_spawns", ex_creature_spawns.run(provider))
 
 
 def run_smoke(provider) -> None:

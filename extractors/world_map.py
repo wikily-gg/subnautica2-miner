@@ -86,10 +86,21 @@ CREATURE_BP_RE = re.compile(r"^(BP_|BPC_).*(?:Crab|Leviathan|Anemone|Slug|Eel|Sh
                             r"Geordie|Halfmoon|Bullethead|Cerathecan|Pneumo|Tadpole|Spinney|"
                             r"FourEyes|Clamthulu|WaterSlug|AcidAnemone|Boid|FishSchool)", re.I)
 
+# Cave-prefab actors (BP_BO_*Cave*, BP_*Cavern*, etc.) override DROP_SUBSTRINGS
+# but exclude flora props (CavePlantTendrils) and VFX triggers.
+CAVE_KEEP_RE = re.compile(r"(?<!Plant)(Cave|Cavern|Tunnel|Grotto)", re.I)
+CAVE_DROP_RE = re.compile(r"CavePlant|VFXTrigger|Decal|Foliage", re.I)
+
+
+def _is_cave_class(class_name: str) -> bool:
+    return bool(CAVE_KEEP_RE.search(class_name)) and not bool(CAVE_DROP_RE.search(class_name))
+
 
 def _is_interesting(class_name: str) -> bool:
     if class_name in DROP_EXACT:
         return False
+    if _is_cave_class(class_name):
+        return True
     if any(d in class_name for d in DROP_SUBSTRINGS):
         # Allow creatures even if they also match a drop pattern
         if CREATURE_BP_RE.search(class_name):
@@ -206,13 +217,16 @@ def run(provider, max_cells: int | None = None) -> dict:
         "resources": [],
         "creatures": [],
         "pois": [],
+        "caves": [],
         "volumes": [],
         "loot": [],
         "other": [],
     }
     for p in placements:
         cls = p["class"]
-        if "Resource" in cls or "WorldPopSpawned" in cls:
+        if _is_cave_class(cls):
+            buckets["caves"].append(p)
+        elif "Resource" in cls or "WorldPopSpawned" in cls:
             buckets["resources"].append(p)
         elif CREATURE_BP_RE.search(cls):
             buckets["creatures"].append(p)

@@ -8,6 +8,7 @@ FGameplayTagContainer, FSoftObjectPath, etc).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -409,6 +410,27 @@ def _read_struct_components(val, components: tuple[str, ...]) -> list[float] | N
             return [prop_float(u, c) for c in components]
         except Exception:
             pass
+    # Last-resort: parse the str() repr.  CUE4Parse prints FVector/FRotator with
+    # the .NET locale's decimal separator (comma in fr-FR), e.g.
+    #   "X=-219479,438 Y=426533,344 Z=-20398,982 (FVector)"
+    # or "P=19,200102 Y=16709,172 R=0 (FRotator)".
+    try:
+        s = str(val)
+        if s and "CUE4Parse" not in s:
+            out = []
+            for c in components:
+                m = re.search(
+                    rf"\b{re.escape(c)}=(-?[0-9]+(?:[.,][0-9]+)?(?:[eE][+\-]?[0-9]+)?)",
+                    s,
+                )
+                if m is None:
+                    out = None
+                    break
+                out.append(float(m.group(1).replace(",", ".")))
+            if out is not None:
+                return out
+    except Exception:
+        pass
     return None
 
 

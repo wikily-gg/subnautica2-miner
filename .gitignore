@@ -21,10 +21,19 @@ out/
 *.png
 *.jpg
 *.pdf
+*.geojson
 
 # but keep these specific committed examples / docs
 !docs/*.png
 !docs/*.geojson
+
+# Generated viewer artefacts (rebuilt by web/build_data.py)
+web/data/
+web/data-bundle.js
+web/assets/
+
+# Throwaway probe scripts
+/probe_*.py
 
 # OS junk
 .DS_Store
