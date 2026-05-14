@@ -74,6 +74,163 @@ COMPOSITE_PARTS: dict[str, list[str]] = {
     ],
 }
 
+# Vehicle assembly → list of chassis Blueprints to merge. The composite
+# renderer reads each BP's Simple Construction Script to get the
+# authoritative list of mesh components + per-component transforms
+# (RelativeLocation / Rotation / Scale). Same mesh placed twice in the
+# BP with different transforms creates left/right mirrored variants
+# automatically — no hardcoded duplication needed.
+#
+# Chassis variants list BOTH the base Tadpole BP and their own chassis
+# BP so the chassis-specific hardware sits on top of the base hull's
+# components.
+VEHICLE_BP_ASSEMBLIES: dict[str, list[str]] = {
+    "vehicle_tadpole": [
+        "/Game/Blueprints/Vehicle/BP_Tadpole",
+    ],
+    # HAUL is *standalone* — its Blueprint has its own complete hull
+    # (`SM_Tadpole_HAUL` + `SKM_Tadpole_HAUL`), its own glass, chairs,
+    # storage doors, spotlight, propeller housing, and re-uses just
+    # the base Tadpole's propeller meshes via new transforms inside
+    # the HAUL BP itself. Merging in the base Tadpole BP causes
+    # double-body geometry and overlapping propellers — the HAUL
+    # chassis swap REPLACES the base body in-engine.
+    "vehicle_tadpole_haul": [
+        "/Game/Blueprints/Vehicle/Tadpole/BP_Haul_TadpoleChassis",
+    ],
+    # ScoutRay and Seafrog are overlay chassis - their BPs only define
+    # the chassis-specific hardware (manta wings + arms for ScoutRay,
+    # placeholder collision cubes for Seafrog) and rely on the base
+    # Tadpole hull to provide the body underneath.
+    "vehicle_tadpole_scoutray": [
+        "/Game/Blueprints/Vehicle/BP_Tadpole",
+        "/Game/Blueprints/Vehicle/Tadpole/BP_ScoutRay_TadpoleChassis",
+    ],
+    "vehicle_tadpole_seafrog": [
+        "/Game/Blueprints/Vehicle/BP_Tadpole",
+        "/Game/Blueprints/Vehicle/Tadpole/BP_Seafrog_TadpoleChassis",
+    ],
+    "vehicle_lifepod": [
+        "/Game/Blueprints/Vehicle/BP_Lifepod",
+    ],
+}
+
+
+# Vehicle assemblies — full vehicles built from many static + skeletal
+# meshes. The composite renderer (`render_assembly`) exports each part
+# (via the standard `export_one`) and composes them in a single Blender
+# scene, then renders ONE PNG. Output goes to `out/renders/<slug>.png`
+# with `<slug>` matching the SN2 wiki vehicle slug.
+#
+# Part order doesn't affect the render (we import everything at the
+# scene origin). Keys are wiki vehicle slugs so the website can resolve
+# `<R2>/renders/vehicle_<slug>.png` directly.
+#
+# Notes:
+#   • Trident — only accessory props are in the public build (lights,
+#     drainage, transformer). No main hull, so we don't ship a Trident
+#     assembly here.
+#   • Lifepod — interior decals are mostly tiny coplanar decals that
+#     don't help silhouette; included anyway because they're cheap.
+#   • Glass meshes are excluded from the default assembly because they
+#     dominate the bbox and Cycles renders them opaque-white when their
+#     PBR materials aren't reconstructed correctly. Re-add if/when the
+#     glass-shader path improves.
+VEHICLE_ASSEMBLIES: dict[str, list[str]] = {
+    "vehicle_tadpole": [
+        "SKM_Tadpole",                       # cockpit canopy (skeletal)
+        "SM_Tadpole_Body_Nanite",            # main hull body
+        "SM_Tadpole_DM_1",
+        "SM_Tadpole_DM_2",
+        "SM_Tadpole_DM_3",
+        "SM_Tadpole_DM_Screen",              # cockpit display
+        "SM_Tadpole_Handlebar_L",
+        "SM_Tadpole_Handlebar_R",
+        "SM_Tadpole_Oxygenport",
+        "SM_Tadpole_Prop_Main",              # main propeller
+        "SM_Tadpole_Prop_Extend_Main",
+        "SM_Tadpole_Prop_Secondary_Blades",
+        "SM_Tadpole_Prop_Secondary_Boost",
+        "SM_Tadpole_Prop_Secondary_LR",
+        "SM_Tadpole_Storage",
+        "SM_Tadpole_UpgradeSlot",
+    ],
+    "vehicle_tadpole_haul": [
+        # HAUL is the BASE Tadpole with a cargo-hauler chassis overlay -
+        # the chassis system extends the base sub with extra storage
+        # bays, chairs, and a redesigned propeller housing, but the
+        # cockpit canopy and core hull come from the base Tadpole.
+        # Include every base Tadpole part PLUS the HAUL-specific cargo
+        # hardware so the render has glass + cockpit + body.
+        "SKM_Tadpole",                        # base cockpit canopy (glass)
+        "SM_Tadpole_Body_Nanite",
+        "SM_Tadpole_DM_1",
+        "SM_Tadpole_DM_2",
+        "SM_Tadpole_DM_3",
+        "SM_Tadpole_DM_Screen",
+        "SM_Tadpole_Handlebar_L",
+        "SM_Tadpole_Handlebar_R",
+        "SM_Tadpole_Oxygenport",
+        "SM_Tadpole_Storage",
+        "SM_Tadpole_UpgradeSlot",
+        # HAUL-specific cargo-chassis attachments.
+        "SKM_Tadpole_HAUL",
+        "SM_Tadpole_HAUL",
+        "SM_Tadpole_Haul_Chair_L",
+        "SM_Tadpole_Haul_Chair_R",
+        "SM_Tadpole_Haul_Handlebar",
+        "SM_Tadpole_Haul_PropellorMainHousing",
+        "SM_Tadpole_Haul_Spotlight",
+        "SM_Tadpole_Haul_StorageDoor_L",
+        "SM_Tadpole_Haul_StorageDoor_R",
+        "SM_Tadpole_Haul_UpgradePanel",
+    ],
+    "vehicle_tadpole_scoutray": [
+        # ScoutRay is the BASE Tadpole hull with a manta-wing chassis
+        # overlay — the chassis system only swaps movement hardware,
+        # not the sub itself. Include every base Tadpole part PLUS the
+        # ScoutRay-specific manta wings.
+        "SKM_Tadpole",                        # base cockpit canopy
+        "SM_Tadpole_Body_Nanite",
+        "SM_Tadpole_DM_1",
+        "SM_Tadpole_DM_2",
+        "SM_Tadpole_DM_3",
+        "SM_Tadpole_DM_Screen",
+        "SM_Tadpole_Handlebar_L",
+        "SM_Tadpole_Handlebar_R",
+        "SM_Tadpole_Oxygenport",
+        "SM_Tadpole_Storage",
+        "SM_Tadpole_UpgradeSlot",
+        # ScoutRay-specific manta wing chassis attachments.
+        "SK_Tadpole_Scout_Ray",
+        "SM_Tadpole_Chassis_MantaWings",
+        "SM_Tadpole_MantaWings_Arm",
+        "SM_Tadpole_MantaWings_Chassis",
+        "SM_Tadpole_MantaWings_L",
+        "SM_Tadpole_MantaWings_Wing_L",
+        "SM_Tadpole_MantaWings_Wing_R",
+    ],
+    "vehicle_lifepod": [
+        "SM_Lifepod",                        # main pod body
+        "SM_Lifepod_CeilingPanel",
+        "SM_Lifepod_Door",
+        "SM_Lifepod_Door_Glass",             # window in the hatch
+        "SM_Lifepod_Door_Latch",
+        "SM_Lifepod_Glass",                  # main canopy glass
+        "SM_Lifepod_Interior",
+        "SM_Lifepod_Interior_Decals",
+        "SM_Lifepod_MedkitDispenser",
+        "SM_Lifepod_NOA_Glass",              # NoA AI eye lens
+        "SM_Lifepod_Radio",
+        "SM_Lifepod_ReleaseHandle",
+        "SM_Lifepod_Tube",
+        "SM_Lifepod_TubeCover",
+        "SM_MiniNoA_Eye",
+        "SM_MiniNoA_EyeGlass",               # AI eye glass cover
+        "SM_Hatch_Membrane_Lifepod",
+    ],
+}
+
 
 # Mesh archetype hints fed to the renderer for camera framing.
 # Slugs not listed default to "static" (no rig pose needed).

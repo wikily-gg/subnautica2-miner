@@ -274,6 +274,53 @@ def run_mesh_render(args: list[str]) -> None:
     render_slugs(slugs, angles=angles)
 
 
+def run_mesh_composite(args: list[str]) -> None:
+    """Composite multi-part vehicles into a single PNG via Blender.
+
+    Flags:
+      --all                       render every VEHICLE_ASSEMBLIES entry
+      --filter <substr>           filter assemblies by substring
+      --force-export              re-export part GLBs even if cached
+    """
+    from meshes.composite import render_assembly, render_assemblies
+    from meshes.exporter import VEHICLE_ASSEMBLIES
+
+    force_export = "--force-export" in args
+
+    if "--all" in args:
+        render_assemblies(force_export=force_export)
+        return
+    if "--filter" in args:
+        idx = args.index("--filter")
+        sub = args[idx + 1] if idx + 1 < len(args) else ""
+        render_assemblies(filter_substr=sub, force_export=force_export)
+        return
+
+    # Skip flags + their values when collecting positional args
+    skip_next = False
+    slugs: list[str] = []
+    for a in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if a == "--filter":
+            skip_next = True
+            continue
+        if a.startswith("--"):
+            continue
+        slugs.append(a)
+    if not slugs:
+        logging.error(
+            "usage: python run.py mesh-composite <assembly> [<assembly>...] "
+            "| --all | --filter <substr>\n"
+            "Known assemblies: %s",
+            ", ".join(sorted(VEHICLE_ASSEMBLIES.keys())),
+        )
+        return
+    for s in slugs:
+        render_assembly(s, force_export=force_export)
+
+
 def run_upload(backup: bool = False, force: bool = False) -> None:
     """Upload out/ to R2.
 
@@ -377,6 +424,9 @@ def main():
         return
     if args[0] == "mesh-render":
         run_mesh_render(args[1:])
+        return
+    if args[0] == "mesh-composite":
+        run_mesh_composite(args[1:])
         return
 
     provider = create_provider()
