@@ -6,8 +6,9 @@ import logging
 
 from helpers import (
     _export_class, array_values, find_export, prop, prop_array, prop_enum,
-    prop_int, prop_object_path, prop_str, prop_tags, safe_load_package,
-    short_name_from_path, struct_int, struct_obj_path, struct_str, unwrap_struct,
+    prop_float, prop_int, prop_object_path, prop_str, prop_tags,
+    safe_load_package, short_name_from_path, struct_int, struct_obj_path,
+    struct_str, unwrap_struct,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,48 @@ def _walk(provider, prefix: str):
 
 # ---------------- Biomods ----------------
 
+def _resolve_biomod_cooldown(provider, biomod_id: str) -> float | None:
+    """Find `GE_<Name>_ActiveBiomodCooldown` and walk into its DurationMagnitude.
+
+    The structure is nested:
+      DurationMagnitude (FGameplayEffectModifierMagnitude)
+        .ScalableFloatMagnitude (FScalableFloat)
+            .Value (float) ← the cooldown in seconds
+
+    Active biomods share this naming. Passives have no cooldown.
+    """
+    name = biomod_id
+    if name.startswith("DA_"):
+        name = name[3:]
+    name = name.removesuffix("_ActiveBioAbilityData").removesuffix("_PassiveBioAbilityData")
+    pkg = f"/Game/Blueprints/AbilitySystem/Effects/Biomods/Cooldowns/GE_{name}_ActiveBiomodCooldown"
+    package = safe_load_package(provider, pkg)
+    if package is None:
+        return None
+    for ex in package.GetExports():
+        if not str(ex.Name).startswith("Default__"):
+            continue
+        outer = prop(ex, "DurationMagnitude")
+        outer = unwrap_struct(outer) if outer is not None else None
+        if outer is None:
+            continue
+        scalable = prop(outer, "ScalableFloatMagnitude")
+        scalable = unwrap_struct(scalable) if scalable is not None else None
+        if scalable is None:
+            continue
+        val = prop(scalable, "Value")
+        if val is None:
+            continue
+        try:
+            f = float(val)
+        except (TypeError, ValueError):
+            continue
+        if f == 0.0:
+            continue
+        return f
+    return None
+
+
 def extract_biomod(provider, asset_path: str) -> dict | None:
     pkg_path = asset_path[:-7]
     package = safe_load_package(provider, pkg_path)
@@ -29,8 +72,9 @@ def extract_biomod(provider, asset_path: str) -> dict | None:
     export = find_export(package, class_substring="UWEBioAbilityData")
     if export is None:
         return None
+    biomod_id = short_name_from_path(pkg_path)
     return {
-        "id": short_name_from_path(pkg_path),
+        "id": biomod_id,
         "asset": pkg_path,
         "name": prop_str(export, "Name"),
         "description": prop_str(export, "Description"),
@@ -38,6 +82,10 @@ def extract_biomod(provider, asset_path: str) -> dict | None:
         "ability": prop_object_path(export, "BioAbility"),
         "type": prop_enum(export, "BioAbilityType"),
         "ability_tag": (prop_tags(export, "AbilityTag") or [None])[0],
+        # New fields — designer-set unlock cost (adaptation points) +
+        # cooldown duration from the linked GameplayEffect asset.
+        "unlock_cost": prop_int(export, "UnlockCost"),
+        "cooldown_seconds": _resolve_biomod_cooldown(provider, biomod_id),
     }
 
 

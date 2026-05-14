@@ -35,7 +35,17 @@ from CUE4Parse.UE4.Versions import EGame, VersionContainer  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def create_provider() -> DefaultFileProvider:
+def create_provider(read_nanite: bool = False, skip_textures: bool = True) -> DefaultFileProvider:
+    """Create the CUE4Parse provider.
+
+    Args:
+        read_nanite: enable Nanite mesh data loading (needed for mesh
+            export of Nanite-only static meshes). Kept off by default
+            for cheap JSON extraction.
+        skip_textures: skip loading texture data from referenced packages.
+            Kept on by default since most extractors only need texture
+            path strings, not pixels.
+    """
     logger.info("Creating file provider for: %s", config.PAKS_DIR)
 
     # CUE4Parse ships an oodle bootstrap; reuse the DLL from the ark miner
@@ -61,11 +71,14 @@ def create_provider() -> DefaultFileProvider:
         StringComparer.OrdinalIgnoreCase,
     )
 
-    provider.SkipReferencedTextures = True
-    provider.ReadNaniteData = False
+    provider.SkipReferencedTextures = skip_textures
+    provider.ReadNaniteData = read_nanite
     provider.ReadShaderMaps = False
     provider.ReadScriptData = True
-    provider.UseLazyPackageSerialization = True
+    # Lazy serialization is OK for JSON-only flows, but mesh + texture
+    # extraction needs eager bulk data so reloading from cache returns
+    # populated Mips. Toggle it off when textures are needed.
+    provider.UseLazyPackageSerialization = skip_textures
 
     provider.Initialize()
     logger.info("Provider initialised – scanning for containers")

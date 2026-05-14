@@ -54,7 +54,14 @@ OUTPUT_DIR: str = _env("SN2_OUTPUT_DIR") or str(Path(__file__).with_name("out"))
 # Game version
 # ---------------------------------------------------------------------------
 
-# Subnautica 2 is built on UE 5.6 (per the .usmap filename).
+# Subnautica 2 is built on UE 5.6 (per the .usmap filename). A custom
+# `GAME_Subnautica2` enum was experimented with in CUE4Parse to handle SN2's
+# divergent Nanite cluster format but the binary layout differs by more than
+# just the UE5.6 AssemblyTransforms/MeshBounds fields — full Nanite cluster
+# extraction for SN2 isn't currently working. Keep the default at GAME_UE5_6
+# so IoStore packages load correctly. A safety try/catch in FStaticMeshRender-
+# Data lets normal-LOD reads survive Nanite parse failures so the JSON
+# extractors (which don't need geometry) keep working.
 UE_GAME: str = os.environ.get("SN2_UE_GAME", "GAME_UE5_6")
 
 # ---------------------------------------------------------------------------
