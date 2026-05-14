@@ -98,17 +98,28 @@ def load_discovery() -> dict[str, str]:
 def candidates_for_base(base: str) -> list[str]:
     """Return mesh-slug candidates ordered by preference.
 
-    Skips `SM_*` (static-mesh) prefixes because SN2's static meshes are
-    Nanite-only and the cooked paks don't carry the LOD geometry data
-    CUE4Parse needs to export them. Only `SKM_*` (skeletal) and `SK_*`
-    (older skeletal naming) meshes export reliably. Static-mesh items —
-    ingots, food, deposits — can't be auto-rendered from this build state.
+    Probes `SKM_*`/`SK_*` (skeletal) first, then `SM_*` (static). The static
+    branch became viable after the UE5.6 Nanite parser fix in CUE4Parse
+    (FStaticMeshLODResources / FNaniteResources: PR May 2026): the previously
+    broken CoarseMeshStreamingIndex skip was UE5.5-only, and the
+    NANITE_RESOURCE_FLAG_STREAMING_DATA_IN_DDC bit changed from 0x4 to 0x1.
+    Without that fix CUE4Parse misaligned the asset stream and returned
+    zero-LOD geometry for every SN2 static mesh.
+
+    Suffix order (`_01`, `_01a`) matches Unknown Worlds' asset naming —
+    creature meshes tend to live under `Creatures/<Name>_01/Mesh/SM_<Name>_01`,
+    sometimes with an `a` variant for revisions.
     """
     out: list[str] = []
-    for prefix in ("SKM_", "SK_"):
+    for prefix in ("SKM_", "SK_", "SM_"):
         out.append(f"{prefix}{base}")
         out.append(f"{prefix}{base}_01")
         out.append(f"{prefix}{base}_01a")
+        # SN2 ships separate DistanceLOD static-mesh variants for Nanite-enabled
+        # creatures (e.g. SM_VepsDefender_01_DistanceLOD). When the Nanite-only
+        # mesh has no normal LOD, the DistanceLOD variant is the fallback.
+        out.append(f"{prefix}{base}_DistanceLOD")
+        out.append(f"{prefix}{base}_01_DistanceLOD")
     return out
 
 
@@ -125,12 +136,14 @@ def match_mesh_slug(base: str, discovery: dict[str, str]) -> str | None:
         hit = lower_index.get(c.lower())
         if hit:
             return hit
-    # Substring fallback — find any SKELETAL mesh whose name contains the base.
-    # Skip SM_* because they don't export (Nanite-only).
+    # Substring fallback — find any mesh whose name contains the base. Skeletal
+    # is preferred when available (better topology + skinning data); fall back
+    # to static when only `SM_*` exists.
     base_l = base.lower()
-    for slug in discovery:
-        if base_l in slug.lower() and any(slug.startswith(p) for p in ("SKM_", "SK_")):
-            return slug
+    for prefixes in (("SKM_", "SK_"), ("SM_",)):
+        for slug in discovery:
+            if base_l in slug.lower() and any(slug.startswith(p) for p in prefixes):
+                return slug
     return None
 
 
