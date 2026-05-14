@@ -645,6 +645,46 @@ def _pick_body_fallback(tex_index: dict, stem_tokens: dict, slug_toks: list[str]
     return None
 
 
+def _apply_neutral_fallback_material(meshes, label: str = "neutral_fallback"):
+    """Stamp a light-grey Principled BSDF onto every material slot.
+
+    Used when texture rebuild can't find any usable PNGs (Alterra
+    trimsheet meshes, base-piece props that ship without sibling
+    textures). Without this the slots keep their default state which
+    renders as solid black under our studio lighting - we'd rather
+    show the silhouette as clean concept-art grey than a dark blob.
+
+    Light grey base, mid roughness, no metallic. Identical to the
+    style we apply for missing-icon vehicle parts.
+    """
+    mat = bpy.data.materials.new(name=label)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.location = (-300, 0)
+    out.location = (0, 0)
+
+    def _set(name, value):
+        soc = bsdf.inputs.get(name)
+        if soc is not None:
+            soc.default_value = value
+
+    _set("Base Color", (0.78, 0.79, 0.82, 1.0))  # warm neutral grey
+    _set("Roughness", 0.55)
+    _set("Specular IOR Level", 0.5)
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    for o in meshes:
+        if not o.material_slots:
+            o.data.materials.append(mat)
+            continue
+        for slot in o.material_slots:
+            slot.material = mat
+
+
 def attach_pbr_materials(meshes, glb_path: str, slug: str = ""):
     """Walk up from the glb's directory looking for sibling texture PNGs and
     rebuild each material from them.
@@ -657,12 +697,18 @@ def attach_pbr_materials(meshes, glb_path: str, slug: str = ""):
          board. Fall back to a texture stem matching the SLUG name
          + a 'body'/'exterior' tag, so e.g. SKM_Tadpole's empty slot
          picks `T_Tadpole_Exterior` not `T_Alterra_BasePlastic_01`.
+
+    When NO usable texture stems are found in the search root, every
+    material slot gets a neutral fallback grey instead - prevents the
+    Alterra trimsheet meshes from rendering as solid black.
     """
     root = _texture_search_root(glb_path)
     print(f"  texture-search root: {root}")
     tex_index = _find_textures(root)
     print(f"  found {len(tex_index)} texture stems")
     if not tex_index:
+        print(f"  no textures - applying neutral grey fallback for {slug or 'mesh'}")
+        _apply_neutral_fallback_material(meshes, label=f"{slug or 'mesh'}_neutral")
         return
 
     uv_layer, uv_range = _pick_uv_layer(meshes)
@@ -707,6 +753,10 @@ def attach_pbr_materials(meshes, glb_path: str, slug: str = ""):
                 #    materials and only one texture exists (e.g. Glowstick
                 #    uses MI_Blockout_Emissive_Fushia and ships with a single
                 #    T_KF_PlantDisc texture as a stand-in)
+                # 3) Final fallback: stamp a neutral grey Principled BSDF
+                #    so the slot doesn't render as solid black. Better to
+                #    show the mesh silhouette in clean concept-grey than
+                #    a dark blob with no surface detail.
                 bc_stems = [(s, p) for s, p in tex_index.items()
                             if any(k in p for k in ("basecolor", "basecolor_metallic"))]
                 if is_engine_default:
@@ -717,7 +767,22 @@ def attach_pbr_materials(meshes, glb_path: str, slug: str = ""):
                     best = bc_stems[0]
                     print(f"  material {mat.name} -> {best[0]} (sole-texture fallback)")
                 else:
-                    print(f"  material {mat.name} -> no texture match (toks={mat_toks})")
+                    print(f"  material {mat.name} -> no texture match (toks={mat_toks}) - neutral grey")
+                    slot.material = bpy.data.materials.new(name=f"{mat.name}_neutral")
+                    slot.material.use_nodes = True
+                    _nt = slot.material.node_tree
+                    for _n in list(_nt.nodes):
+                        _nt.nodes.remove(_n)
+                    _out = _nt.nodes.new("ShaderNodeOutputMaterial")
+                    _bsdf = _nt.nodes.new("ShaderNodeBsdfPrincipled")
+                    _bsdf.location = (-300, 0)
+                    bc_input = _bsdf.inputs.get("Base Color")
+                    if bc_input is not None:
+                        bc_input.default_value = (0.78, 0.79, 0.82, 1.0)
+                    rough = _bsdf.inputs.get("Roughness")
+                    if rough is not None:
+                        rough.default_value = 0.55
+                    _nt.links.new(_bsdf.outputs["BSDF"], _out.inputs["Surface"])
                     continue
             else:
                 stem = best[0]
