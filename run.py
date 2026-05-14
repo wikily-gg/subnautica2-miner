@@ -428,6 +428,33 @@ def main():
     if args[0] == "mesh-composite":
         run_mesh_composite(args[1:])
         return
+    if args[0] == "item-mesh-discover":
+        # Walk every item BP and write out/item_meshes.json with the
+        # static / skeletal mesh refs needed to render inventory
+        # thumbnails for icon-less items.
+        from extractors import item_meshes as ex_item_meshes
+        provider = create_provider()
+        rows = ex_item_meshes.run(provider)
+        _write("item_meshes", rows)
+        return
+    if args[0] == "item-icons":
+        # Render PNG thumbnails for icon-less items using their
+        # actor-class BP's preview mesh. Output: out/renders/<mesh>.png.
+        from meshes.item_render import run as run_item_icons
+        include_all = "--all" in args[1:]
+        skip_existing = "--force" not in args[1:]
+        filter_substr = None
+        rest = args[1:]
+        if "--filter" in rest:
+            idx = rest.index("--filter")
+            if idx + 1 < len(rest):
+                filter_substr = rest[idx + 1]
+        run_item_icons(
+            include_all=include_all,
+            filter_substr=filter_substr,
+            skip_existing=skip_existing,
+        )
+        return
 
     provider = create_provider()
 
