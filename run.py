@@ -422,15 +422,27 @@ def main():
         from extractors import community_videos as ex_yt
         days = 7
         limit = 80
-        handle = "QuickTipshow"
+        # `--channel <handle>` is repeatable. Without any flag we
+        # scan `DEFAULT_HANDLES` (every channel we've onboarded).
+        handles: list[str] = []
         rest = args[1:]
-        if "--days" in rest:
-            days = int(rest[rest.index("--days") + 1])
-        if "--limit" in rest:
-            limit = int(rest[rest.index("--limit") + 1])
-        if "--channel" in rest:
-            handle = rest[rest.index("--channel") + 1]
-        result = ex_yt.run(handle=handle, days=days, limit=limit)
+        i = 0
+        while i < len(rest):
+            token = rest[i]
+            if token == "--days" and i + 1 < len(rest):
+                days = int(rest[i + 1])
+                i += 2
+            elif token == "--limit" and i + 1 < len(rest):
+                limit = int(rest[i + 1])
+                i += 2
+            elif token == "--channel" and i + 1 < len(rest):
+                handles.append(rest[i + 1])
+                i += 2
+            else:
+                i += 1
+        result = ex_yt.run(
+            handles=handles or None, days=days, limit=limit,
+        )
         _write("community_videos", result)
         return
     if args[0] == "mesh-discover":

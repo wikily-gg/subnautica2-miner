@@ -30,18 +30,24 @@ log = logging.getLogger(__name__)
 # Curator-defined per-video overrides
 # ---------------------------------------------------------------------------
 #
-# Maps known YouTube video IDs to their canonical wiki target. Heuristic
-# matching handles the long tail; this table pins the cases where the
-# title would otherwise mis-route (typos like "Processer", in-game
-# nicknames like "Old Habitat" with no entity page, story-only content
-# that belongs on a hub).
+# Maps known YouTube video IDs to their canonical wiki target(s).
+# Heuristic matching handles the long tail; this table pins the
+# cases where the title would otherwise mis-route (typos like
+# "Processer", in-game nicknames like "Old Habitat" with no entity
+# page, story-only content that belongs on a hub).
 #
-# Each entry: (category, slug, caption)
+# Each value is either a single placement tuple or a list of them.
+# A list places the same video on multiple wiki targets - useful
+# when a single clip is relevant to two creatures (e.g. the Shiver
+# Leviathan adult and its Juvenile share the same first-look video).
+#
+# Placement tuple: (category, slug, caption)
 #   category: "creatures" | "items" | "biomods" | "vehicles" | "flora"
 #             | "hub:base-building" | "hub:story" | "hub:faq" | "hub:landing"
 #   slug:     URL slug for entity pages, ignored for hubs.
 #   caption:  eyebrow text ("Find guide", "Walkthrough", "How-to").
-VIDEO_OVERRIDES: dict[str, tuple[str, str | None, str]] = {
+Placement = tuple[str, str | None, str]
+VIDEO_OVERRIDES: dict[str, Placement | list[Placement]] = {
     # ── Creatures ────────────────────────────────────────────────
     "ETzGJg1fhGE": ("creatures", "bullethead", "Find guide"),
     "dgqyi8MoJ0E": ("creatures", "collector-leviathan", "Scan guide"),
@@ -120,14 +126,37 @@ VIDEO_OVERRIDES: dict[str, tuple[str, str | None, str]] = {
     # ── Hub: landing (flagship / beginner overviews) ─────────────
     "df8ynhpl8a4": ("hub:landing", None, "Flagship"),  # 25 Tips & Tricks
     "gPLfoOcm76E": ("hub:landing", None, "Beginner"),  # Food Early Game
+    # ── Nxviss: first-look creature previews ─────────────────────
+    # UWE's pre-release marketing called the Shiver Leviathan family
+    # the "Void Leviathan", so Nxviss's clip lands on both the adult
+    # and the juvenile entries - they're the same species and players
+    # might browse either page first.
+    "UdNLntRvvcA": [
+        ("creatures", "shiver-leviathan", "First look"),
+        ("creatures", "shiver-leviathan-juvenile", "First look"),
+    ],
+    "2Msf01wZdL0": ("creatures", "collector-leviathan", "First look"),
+    "T9i3l8n2-JU": ("hub:landing", None, "Exploration"),  # How Far Can You Go
 }
 
 
 # Channel display name → full channel URL. Wiki uses this to render
-# the clickable channel chip in the info column.
+# the clickable channel chip in the info column. New creators get added
+# here AND to `DEFAULT_HANDLES` below so the matcher actually scans
+# them on the next run.
 KNOWN_CHANNELS: dict[str, str] = {
     "QuickTipshow": "https://www.youtube.com/@QuickTipshow",
+    "Nxviss": "https://www.youtube.com/@Nxviss",
 }
+
+# YouTube handles scanned on every `python run.py community-videos`
+# unless `--channel <handle>` overrides. Order matters only for
+# tie-break (same video uploaded across two channels picks the first
+# match), which is theoretical for now.
+DEFAULT_HANDLES: list[str] = [
+    "QuickTipshow",
+    "Nxviss",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -249,12 +278,20 @@ def _slug(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run(handle: str = "QuickTipshow", days: int = 7, limit: int = 80) -> dict:
-    """Build the community-videos JSON. Layout:
+def run(
+    handles: list[str] | str | None = None,
+    days: int = 7,
+    limit: int = 80,
+) -> dict:
+    """Build the community-videos JSON. Scans one or more YouTube
+    channel handles (defaults to every entry in ``DEFAULT_HANDLES``)
+    and merges the results into a single output document.
+
+    Layout::
 
         {
           "generated_at": ISO,
-          "channel": "@QuickTipshow",
+          "channels": ["@QuickTipshow", "@Nxviss"],
           "by_category": {
             "creatures": {"<slug>": [VideoEntry, ...]},
             "items":     {"<slug>": [VideoEntry, ...]},
@@ -269,8 +306,24 @@ def run(handle: str = "QuickTipshow", days: int = 7, limit: int = 80) -> dict:
           "unmatched": [VideoEntry, ...]
         }
     """
+    if handles is None:
+        handle_list = list(DEFAULT_HANDLES)
+    elif isinstance(handles, str):
+        handle_list = [handles]
+    else:
+        handle_list = list(handles)
+
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    raw = _fetch_recent_uploads(handle, limit=limit, since_utc=since)
+    raw: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for handle in handle_list:
+        log.info("Scanning channel @%s", handle)
+        for info in _fetch_recent_uploads(handle, limit=limit, since_utc=since):
+            vid = info.get("id")
+            if not vid or vid in seen_ids:
+                continue
+            seen_ids.add(vid)
+            raw.append(info)
 
     by_cat: dict[str, dict[str, list[dict]]] = {
         "creatures": {},
@@ -295,41 +348,63 @@ def run(handle: str = "QuickTipshow", days: int = 7, limit: int = 80) -> dict:
             log.info("Skipping non-SN2 video: %s", title)
             continue
 
-        target = VIDEO_OVERRIDES.get(info["id"]) or _heuristic_target(title)
+        raw_target = VIDEO_OVERRIDES.get(info["id"])
+        target_list: list[Placement] = []
+        if raw_target is None:
+            heuristic = _heuristic_target(title)
+            if heuristic is not None:
+                target_list = [heuristic]
+        elif isinstance(raw_target, list):
+            target_list = list(raw_target)
+        else:
+            target_list = [raw_target]
+
         ts = info.get("timestamp") or 0
         published = (
             datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
             if ts
             else ""
         )
-        channel_name = info.get("channel") or info.get("uploader") or handle
+        # Prefer the @handle (uploader_id) as the credit string so
+        # creators stay recognisable when YouTube changes their
+        # display name. QuickTipshow currently renders as "Quick Tips"
+        # in yt-dlp's `channel` field but is still `@QuickTipshow` on
+        # the channel URL - the latter is what fans recognise.
+        uploader_id = info.get("uploader_id") or ""
+        handle = uploader_id.lstrip("@") or info.get("channel") or "Unknown"
+        # Caption is taken from the FIRST placement when an override
+        # is a list; all placements get the same caption.
+        caption = target_list[0][2] if target_list else None
         entry = VideoEntry(
             id=info["id"],
             title=title,
-            channel=channel_name,
-            channel_url=KNOWN_CHANNELS.get(channel_name) or info.get("channel_url"),
+            channel=handle,
+            channel_url=KNOWN_CHANNELS.get(handle) or info.get("channel_url"),
             duration_seconds=int(info.get("duration") or 0) or None,
             published_at=published,
-            caption=(target[2] if target else None),
+            caption=caption,
         )
 
-        if target is None:
+        if not target_list:
             unmatched.append(asdict(entry))
             continue
 
-        category, slug, _caption = target
-        if category.startswith("hub:"):
-            hubs[category.split(":", 1)[1]].append(asdict(entry))
-        else:
-            if slug is None:
-                log.warning("Override for %s has no slug", info["id"])
-                unmatched.append(asdict(entry))
-                continue
-            by_cat[category].setdefault(slug, []).append(asdict(entry))
+        for category, slug, _placement_caption in target_list:
+            if category.startswith("hub:"):
+                hubs[category.split(":", 1)[1]].append(asdict(entry))
+            else:
+                if slug is None:
+                    log.warning(
+                        "Override for %s has no slug for category %s",
+                        info["id"],
+                        category,
+                    )
+                    continue
+                by_cat[category].setdefault(slug, []).append(asdict(entry))
 
     # Sort each bucket: most-recent first.
     for cat_dict in by_cat.values():
-        for slug, videos in cat_dict.items():
+        for _slug, videos in cat_dict.items():
             videos.sort(key=lambda v: v["published_at"], reverse=True)
     for videos in hubs.values():
         videos.sort(key=lambda v: v["published_at"], reverse=True)
@@ -339,12 +414,15 @@ def run(handle: str = "QuickTipshow", days: int = 7, limit: int = 80) -> dict:
         len(v) for cat in by_cat.values() for v in cat.values()
     ) + sum(len(v) for v in hubs.values())
     log.info(
-        "Mapped %d videos (%d unmatched)", total_targeted, len(unmatched)
+        "Mapped %d videos across %d channels (%d unmatched)",
+        total_targeted,
+        len(handle_list),
+        len(unmatched),
     )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "channel": f"@{handle}",
+        "channels": [f"@{h}" for h in handle_list],
         "by_category": by_cat,
         "hubs": hubs,
         "unmatched": unmatched,
