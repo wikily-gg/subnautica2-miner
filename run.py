@@ -416,6 +416,23 @@ def main():
         force = "--force" in args
         run_upload(backup=backup, force=force)
         return
+    if args[0] == "community-videos":
+        # YouTube → wiki video matcher. No CUE4Parse provider needed
+        # since this only talks to YouTube + writes a JSON.
+        from extractors import community_videos as ex_yt
+        days = 7
+        limit = 80
+        handle = "QuickTipshow"
+        rest = args[1:]
+        if "--days" in rest:
+            days = int(rest[rest.index("--days") + 1])
+        if "--limit" in rest:
+            limit = int(rest[rest.index("--limit") + 1])
+        if "--channel" in rest:
+            handle = rest[rest.index("--channel") + 1]
+        result = ex_yt.run(handle=handle, days=days, limit=limit)
+        _write("community_videos", result)
+        return
     if args[0] == "mesh-discover":
         run_mesh_discover()
         return
