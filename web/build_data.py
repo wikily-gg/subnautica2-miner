@@ -581,24 +581,27 @@ def resource_group(cls: str):
     return ("Other Resource", "#39ff14")
 
 
+# NOTE: dict ordering matters — first matching substring wins. Specific
+# tags must come before generic ones (e.g. Tadpole_HAUL before Tadpole).
 POI_GROUP = {
-    "Beacon":             ("Beacon",        "#ffe066"),
-    "Lifepod":            ("Lifepod",       "#ff7fbb"),
-    "BioBed":             ("Lifepod",       "#ff7fbb"),
-    "AbandonedBase":      ("Abandoned Base","#ffb74d"),
-    "Tadpole_HAUL":       ("HAUL Wreck",    "#ff5e57"),
-    "Tadpole":            ("Tadpole",       "#9cffd0"),
-    "Cicada":             ("Cicada Wreck",  "#9cd5ff"),
+    "Beacon":             ("Beacon",          "#ffe066"),
+    "Lifepod":            ("Lifepod",         "#ff7fbb"),
+    "BioBed":             ("Lifepod",         "#ff7fbb"),
+    "AbandonedBase":      ("Abandoned Base",  "#ffb74d"),
+    "Tadpole_HAUL":       ("HAUL Fragment",   "#ff5e57"),
+    "Tadpole_ScoutRay":   ("Scout-Ray Fragment", "#9cd5ff"),
+    "Tadpole":            ("Tadpole Fragment","#9cffd0"),
+    "Cicada":             ("Cicada Wreck",    "#9cd5ff"),
     "UpgradeTerminal":    ("Upgrade Terminal","#ffcc66"),
-    "PowerCellTerminal":  ("Power Cell",    "#ffd84d"),
-    "PowerTerminalSlot":  ("Power Cell",    "#ffd84d"),
-    "BasicBatteryTerminal":("Battery",      "#bfae72"),
-    "Computer":           ("Terminal",      "#9ad0ff"),
-    "DiveElevator":       ("Dive Elevator", "#caa8ff"),
-    "MetalSalvage":       ("Metal Salvage", "#cccccc"),
-    "Blockout_Crate":     ("Crate",         "#e58f3e"),
-    "LightStick":         ("Light Stick",   "#ffffaa"),
-    "AbandonedBaseSign":  ("Base Sign",     "#ffb74d"),
+    "PowerCellTerminal":  ("Power Cell",      "#ffd84d"),
+    "PowerTerminalSlot":  ("Power Cell",      "#ffd84d"),
+    "BasicBatteryTerminal":("Battery",        "#bfae72"),
+    "Computer":           ("Terminal",        "#9ad0ff"),
+    "DiveElevator":       ("Dive Elevator",   "#caa8ff"),
+    "MetalSalvage":       ("Metal Salvage",   "#cccccc"),
+    "Blockout_Crate":     ("Crate",           "#e58f3e"),
+    "LightStick":         ("Light Stick",     "#ffffaa"),
+    "AbandonedBaseSign":  ("Base Sign",       "#ffb74d"),
 }
 
 
@@ -609,9 +612,36 @@ def poi_group(cls: str):
     return ("POI", "#ffd84d")
 
 
+# Static scannable / wreck actors that UE filed under the world_map
+# "creatures" bucket but that we want shown on the Landmarks (POI) tab.
+CREATURE_AS_POI_TAGS = (
+    "Tadpole_HAUL_Fragment",
+    "Tadpole_ScoutRay_Fragment",
+    "Tadpole_Fragment",
+    "DiveElevator",
+)
+
+
 CREATURE_GROUP_DEFAULT = ("Creature", "#ff5e57")
 LOOT_GROUP_DEFAULT = ("Loot", "#ff8a3b")
 VOLUME_GROUP_DEFAULT = ("Volume", "#7aa6ff")
+
+
+# Order matters: more specific substrings first.
+LOOT_GROUP = (
+    ("Crate_Blighted", ("Blighted Crate",         "#a43c4f")),
+    ("Blockout_Crate", ("Crate",                  "#e58f3e")),
+    ("MetalSalvage",   ("Metal Salvage",          "#cccccc")),
+    ("OR_Wreck",       ("Overgrown Ruins Wreck",  "#9cd5ff")),
+    ("Cicada_Wreck",   ("Cicada Wreck",           "#9cd5ff")),
+)
+
+
+def loot_group(cls: str):
+    for tag, info in LOOT_GROUP:
+        if tag in cls:
+            return info
+    return LOOT_GROUP_DEFAULT
 
 # Map BP / BPC class names to clean creature display names.  Real creatures
 # spawn dynamically; what's placed in the world is a mix of WorldPopProxy
@@ -800,12 +830,21 @@ def build():
 
     feature_id = 0
     for cat in CATEGORIES:
-        # "creatures" markers come from the seeded-spawn dataset below — the
-        # world_map "creatures" bucket is mostly spawn proxies / decorations and
-        # is no longer surfaced to the map.
         if cat == "creatures":
-            continue
-        items_in_cat = world_map["placements"].get(cat, [])
+            # Mobile creatures come from creature_spawns.json (seeded spawn
+            # data) below. The world_map creatures bucket is mostly spawn
+            # proxies / decorative actors which we skip — but it also holds
+            # static scannable wreck/fragment actors (BP_Tadpole_Fragment_*,
+            # BP_DiveElevator_Scannable). Surface those in the POIs category
+            # so they show up on the Landmarks tab.
+            items_in_cat = [
+                p for p in world_map["placements"].get("creatures", [])
+                if any(t in (p.get("class") or "") for t in CREATURE_AS_POI_TAGS)
+            ]
+            effective_cat = "pois"
+        else:
+            items_in_cat = world_map["placements"].get(cat, [])
+            effective_cat = cat
         for p in items_in_cat:
             x, y, z = p.get("x"), p.get("y"), p.get("z")
             if x is None or y is None:
@@ -820,21 +859,18 @@ def build():
                 continue
             cls = p.get("class") or ""
             class_counts[cls] += 1
-            by_category_count[cat] += 1
+            by_category_count[effective_cat] += 1
 
-            if cat == "resources":
+            if effective_cat == "resources":
                 group, color = resource_group(cls)
                 name = humanize(cls) or group
-            elif cat == "pois":
+            elif effective_cat == "pois":
                 group, color = poi_group(cls)
                 name = humanize(cls) or group
-            elif cat == "creatures":
-                group, color = creature_display(cls)
-                name = group
-            elif cat == "loot":
-                group, color = LOOT_GROUP_DEFAULT
-                name = humanize(cls)
-            elif cat == "caves":
+            elif effective_cat == "loot":
+                group, color = loot_group(cls)
+                name = humanize(cls) or group
+            elif effective_cat == "caves":
                 group = "Cave Prefab"
                 color = "#a78bfa"
                 name = humanize(cls)
@@ -845,7 +881,7 @@ def build():
             biome, sub, region_name = classify(x, y, z)
             depth_m = round((-z) / 100.0, 1) if z is not None else None  # UE Z up; depth below surface
 
-            group_counts[(cat, group)] += 1
+            group_counts[(effective_cat, group)] += 1
 
             feature_id += 1
             features.append({
@@ -857,7 +893,7 @@ def build():
                     "coordinates": [x, y],
                 },
                 "properties": {
-                    "cat": cat,
+                    "cat": effective_cat,
                     "group": group,
                     "color": color,
                     "class": cls,

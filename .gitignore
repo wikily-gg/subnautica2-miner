@@ -47,3 +47,12 @@ Thumbs.db
 # Oodle DLL (Subnautica's IoStore needs it — bootstrap downloads at runtime)
 oo2core_*.dll
 oodle-data-shared.dll
+
+# CUE4Parse texture decoder DLL (vendored locally, not redistributed)
+Detex.dll
+
+# Run / build / pip logs
+*.log
+
+# Scratch
+test_out.txt
