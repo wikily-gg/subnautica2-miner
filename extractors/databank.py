@@ -5,9 +5,9 @@ import logging
 
 from helpers import (
     _export_class, array_values, find_export, obj_ref_path, prop_array,
-    prop_enum, prop_object_path, prop_str, prop_tags, safe_load_package,
-    short_name_from_path, struct_obj_path, unwrap_struct, vec_to_list,
-    rot_to_list, prop,
+    prop_enum, prop_int, prop_object_path, prop_str, prop_tags,
+    safe_load_package, short_name_from_path, struct_obj_path, unwrap_struct,
+    vec_to_list, rot_to_list, prop,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,14 @@ def extract_scan(provider, asset_path: str) -> dict | None:
         "description": prop_str(export, "Description"),
         "scan_duration": float(prop(export, "ScanDuration", 0.0) or 0.0),
         "icon": prop_object_path(export, "Icon"),
+        # Player-facing fragment count ("Scan N fragments to unlock"). Defaults
+        # to 1 on assets that don't override it. For items unlocked by scans
+        # (Flashlight, Habitat Builder, …) this is the value the in-game HUD
+        # shows as "X / N".
+        "num_required": prop_int(export, "NumRequired", 1),
+        # Same image the in-game scan UI displays for the fragment.
+        "thumbnail": prop_object_path(export, "Thumbnail"),
+        "scan_object_type": prop_enum(export, "ScanObjectType") or None,
         "encyclopedia_entry": prop_object_path(export, "EncyclopediaEntry"),
         "databank_entry": prop_object_path(export, "DatabankEntry"),
         "story_goal": prop_object_path(export, "StoryGoal"),

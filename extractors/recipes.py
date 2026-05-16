@@ -16,6 +16,98 @@ RECIPES_DIR = "Subnautica2/Content/Data/CraftingRecipes/"
 BUILDER_DIR = "Subnautica2/Content/Data/BaseBuilding/"
 
 
+# Cache: event_asset path (e.g. "/Game/Data/ScanData/Tools/DA_Tools_Flashlight_ScanData.DA_Tools_Flashlight_ScanData")
+# -> {"num_required": int, "name": str|None, "thumbnail": str|None}
+# Computed lazily as we walk recipes; one ScanData asset may be referenced by
+# multiple recipes (rare, but cheap to cache).
+_scan_data_cache: dict[str, dict | None] = {}
+
+
+def _canonical_game_path(path: str | None) -> str | None:
+    """Strip any class prefix and trailing apostrophe.
+
+    Inputs we see in the wild:
+      - ``/Game/Data/ScanData/Tools/DA_X.DA_X``
+      - ``UWEScanData'/Game/Data/ScanData/Tools/DA_X.DA_X'``
+      - ``UWEScanData'/Game/Foo.Bar:Sub'``
+      - ``None`` / ``""``
+    Output: ``/Game/Data/ScanData/Tools/DA_X.DA_X`` (or ``None``).
+    """
+    if not path:
+        return None
+    s = str(path)
+    if s in ("None", "0", ""):
+        return None
+    # ``Class'/Game/...'`` form
+    if "'" in s:
+        s = s.split("'", 1)[1]
+        if s.endswith("'"):
+            s = s[:-1]
+    if not s or s in ("None", "0"):
+        return None
+    if not s.startswith("/Game/"):
+        return None
+    return s
+
+
+def _gamepath_to_pkg_path(path: str | None) -> str | None:
+    """Convert ``/Game/Foo/Bar.Bar`` to ``Subnautica2/Content/Foo/Bar``.
+
+    Accepts both canonical paths and raw ``Class'/Game/...'`` strings.
+    Strips the trailing ``.<AssetName>`` suffix so the path can be fed to
+    ``safe_load_package``.
+    """
+    canon = _canonical_game_path(path)
+    if canon is None:
+        return None
+    p = "Subnautica2/Content/" + canon[len("/Game/"):]
+    # Sub-object references look like ``/Game/Foo/Bar.Bar:Sub`` — drop the sub.
+    if ":" in p:
+        p = p.split(":", 1)[0]
+    last = p.rsplit("/", 1)[-1]
+    if "." in last:
+        head, _ = p.rsplit(".", 1)
+        p = head
+    return p
+
+
+def _resolve_scan_data(provider, event_asset_path: str | None) -> dict | None:
+    """Load a UWEScanData asset and return its display-relevant fields.
+
+    Returns a dict ``{"num_required": int, "name": str|None, "thumbnail": str|None}``
+    or ``None`` if the path doesn't resolve to a UWEScanData asset.
+
+    Caches by canonical path because the same ScanData can be referenced by
+    multiple recipe unlock entries via different string forms.
+    """
+    canon = _canonical_game_path(event_asset_path)
+    if canon is None:
+        return None
+    if canon in _scan_data_cache:
+        return _scan_data_cache[canon]
+    pkg_path = _gamepath_to_pkg_path(canon)
+    if pkg_path is None:
+        _scan_data_cache[canon] = None
+        return None
+    package = safe_load_package(provider, pkg_path)
+    if package is None:
+        _scan_data_cache[canon] = None
+        return None
+    export = find_export(package, class_substring="UWEScanData")
+    if export is None:
+        _scan_data_cache[canon] = None
+        return None
+    data = {
+        # NumRequired is the player-facing fragment count ("Scan 2 fragments
+        # to unlock"). Defaults to 1 if unset on the asset.
+        "num_required": prop_int(export, "NumRequired", 1),
+        "name": prop_str(export, "Name") or None,
+        "thumbnail": prop_object_path(export, "Thumbnail"),
+    }
+    _scan_data_cache[canon] = data
+    return data
+
+
 def find_recipe_paths(provider) -> list[str]:
     out = []
     for path in provider.Files.Keys:
@@ -74,10 +166,29 @@ def extract_recipe(provider, asset_path: str) -> dict | None:
             iu = unwrap_struct(inner)
             if iu is None:
                 continue
+            event_asset = _canonical_game_path(
+                prop_object_path(iu, "EventAsset")
+                or obj_ref_path(prop(iu, "EventAsset"))
+            )
+            # For scan events the on-recipe RequiredCount is always 1
+            # ("the player needs to complete the scan once"), and the
+            # player-facing fragment count actually lives on the
+            # ScanData asset that EventAsset points to (UWEScanData.
+            # NumRequired). Flashlight: RequiredCount=1 + NumRequired=2
+            # = "Scan 2 fragments". Resolve and surface both so the
+            # frontend can prefer scan_num_required when it's > 1.
+            scan = _resolve_scan_data(provider, event_asset)
             rule_entries.append({
                 "story_goal": prop_object_path(iu, "RequiredStoryGoal") or obj_ref_path(prop(iu, "RequiredStoryGoal")),
                 "tag": (prop_tags(iu, "RequiredTag") or [None])[0],
                 "rule": prop_str(iu, "RuleName"),
+                "required_count": prop_int(iu, "RequiredCount"),
+                "event_type": prop_enum(iu, "EventType"),
+                "event_asset": event_asset,
+                "scope": prop_enum(iu, "RequirementScope"),
+                "scan_num_required": scan["num_required"] if scan else None,
+                "scan_name": scan["name"] if scan else None,
+                "scan_thumbnail": scan["thumbnail"] if scan else None,
             })
         unlocks.append({
             "rule_name": prop_str(u, "RuleName"),
