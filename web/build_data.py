@@ -581,6 +581,24 @@ def resource_group(cls: str):
     return ("Other Resource", "#39ff14")
 
 
+# Class names we drop from the marker stream entirely. These are level-
+# editor placements whose stored XYZ doesn't match what the player ever
+# experiences (game code moves the actor at runtime, or the asset is the
+# crash-site wreck shown only in the intro cinematic). Surfacing them
+# misleads players who click a "Lifepod" marker expecting their spawn
+# point and find a marker at -583m on the seafloor 131m horizontally
+# away from where they actually are.
+#
+# The synthetic surface-lifepod marker is injected after the placement
+# loop using the in-game spawn coordinates the user reported via F3
+# overlay (sea-level z = 235 cm, NOT the editor's z = -58378 cm).
+HIDE_CLASSES = frozenset({
+    "BP_Lifepod_C",                       # editor placement: seafloor wreck
+    "BP_StaticLifepod_Underwater_C",      # static-mesh duplicate of the wreck
+    "BP_LifepodBay_Chunk_Hatch_C",        # hatch chunk near the wreck
+})
+
+
 # NOTE: dict ordering matters — first matching substring wins. Specific
 # tags must come before generic ones (e.g. Tadpole_HAUL before Tadpole).
 POI_GROUP = {
@@ -908,6 +926,11 @@ def build():
                 skipped_outside_wall += 1
                 continue
             cls = p.get("class") or ""
+            if cls in HIDE_CLASSES:
+                # Drop the editor-placement wreck markers so the synthetic
+                # surface-lifepod marker injected below isn't competing
+                # with them for the "Lifepod" group on the legend.
+                continue
             class_counts[cls] += 1
             by_category_count[effective_cat] += 1
 
@@ -964,6 +987,46 @@ def build():
                 },
                 "properties": props,
             })
+
+    # ---------- synthetic surface-lifepod marker (the player's spawn) ----------
+    # The placement loop above drops `BP_Lifepod_C` + `BP_StaticLifepod_
+    # Underwater_C` + `BP_LifepodBay_Chunk_Hatch_C` because their stored
+    # editor positions are on the seafloor (~-583m), which doesn't match
+    # the floating surface lifepod the player actually starts in. We
+    # replace them with a single hand-placed marker at the in-game spawn
+    # coordinates (verified via the F3 overlay: -337168, 433386, +235).
+    # Sits on the "Lifepod" POI group so the legend keeps the same
+    # entry it always had — only the position changes. The frontend
+    # toggles this group on by default since it's the single most
+    # important orientation landmark on the map.
+    spawn_x, spawn_y, spawn_z = -337168, 433386, 235
+    if (x_min - 1000 <= spawn_x <= x_max + 1000
+            and y_min - 1000 <= spawn_y <= y_max + 1000
+            and point_in_polygon(spawn_x, spawn_y, outline_poly)):
+        spawn_biome, spawn_sub, spawn_region = classify(spawn_x, spawn_y, spawn_z)
+        feature_id += 1
+        features.append({
+            "type": "Feature",
+            "id": feature_id,
+            "geometry": {"type": "Point", "coordinates": [spawn_x, spawn_y]},
+            "properties": {
+                "cat": "pois",
+                "group": "Lifepod",
+                "color": "#ff7fbb",
+                # Synthetic class so the frontend can recognise this is
+                # the spawn marker, not a real placement. Keeps the popup
+                # honest about provenance.
+                "class": "BP_Lifepod_Spawn_Synthetic_C",
+                "name": "Lifepod (Spawn)",
+                "depth_m": round((-spawn_z) / 100.0, 1),
+                "z": spawn_z,
+                "biome": spawn_biome,
+                "sub_region": spawn_sub,
+                "region": spawn_region,
+            },
+        })
+        group_counts[("pois", "Lifepod")] += 1
+        by_category_count["pois"] += 1
 
     # ---------- named cave entrances + dive locations from locations.json ----------
     cave_loc_added = 0
