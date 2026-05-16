@@ -605,12 +605,18 @@ POI_GROUP = {
 }
 
 
-# Matches `BP_<Name>_Scannable_C`, `BP_<Name>_Fragment_C`,
+# Matches `BP_<Name>_Scannable_C`, `BP_<Name>_Scan_C` (older convention
+# used by Flashlight, WakeMaker, SonicResonator, ThermalPlantHead/Body,
+# PowerGridCapacitor, Axum_Drum), `BP_<Name>_Fragment_C`,
 # `BP_<Name>_Fragment_<NN>_C`, and `BP_<Name>FragmentA_Scan_C`.
 # Group `(1)` is the raw scannable name we humanize for the marker
-# group label and slugify for the item_slug link.
+# group label and slugify for the item_slug link. The longer
+# `_Scannable` alternative is listed first to avoid the `_Scan`
+# alternative shadowing it - both end with `_C$` so the engine's
+# anchor check rejects the wrong one anyway, but listing length-
+# desc keeps the intent clear.
 _SCANNABLE_CLEAN = re.compile(
-    r"^BP_(.+?)(?:_Scannable|_Fragment(?:_\d+)?|FragmentA_Scan|FragmentB_Scan)_C$"
+    r"^BP_(.+?)(?:_Scannable|_Fragment(?:_\d+)?|FragmentA_Scan|FragmentB_Scan|_Scan)_C$"
 )
 
 

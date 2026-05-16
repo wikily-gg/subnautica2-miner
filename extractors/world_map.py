@@ -47,13 +47,14 @@ KEEP_SUBSTRINGS = (
     "AbandonedBase",
     # Scannable / Fragment placements unlock blueprints for the
     # matching item or vehicle. Each `BP_<Name>_Scannable_C` or
-    # `BP_<Name>_Fragment_*_C` placement is a world spot players
-    # need to find with a Scanner. Without these substrings here,
-    # rebreather / improved fins / repair tool / processor / etc
-    # fragments fall through the filter and never reach
-    # `markers.geojson`, leaving the item detail pages with no
-    # spawn-location info.
+    # `BP_<Name>_Fragment_*_C` or older-convention `BP_<Name>_Scan_C`
+    # placement is a world spot players need to find with a Scanner.
+    # Without these substrings here, rebreather / flashlight /
+    # wakemaker / sonic-resonator / thermal-plant / etc fragments
+    # fall through the filter and never reach `markers.geojson`,
+    # leaving the item detail pages with no spawn-location info.
     "Scannable",
+    "_Scan_C",
     "_Fragment",
     ".Fragment",
     "FragmentA",
@@ -241,11 +242,19 @@ def run(provider, max_cells: int | None = None) -> dict:
             buckets["caves"].append(p)
         elif "Resource" in cls or "WorldPopSpawned" in cls:
             buckets["resources"].append(p)
-        # `BP_*_Scannable_C` / `BP_*_Fragment_*_C` are always POI-class
-        # blueprintable wreckage. Route them before the CREATURE_BP_RE
-        # check because some scannables (Tadpole_Fragment_01, Tadpole_HAUL,
-        # BiobedFragmentA_Scan) match that regex too.
-        elif "Scannable" in cls or "_Fragment" in cls or "FragmentA_Scan" in cls or "FragmentB_Scan" in cls:
+        # `BP_*_Scannable_C` (new convention), `BP_*_Scan_C` (older
+        # convention - Flashlight, WakeMaker, SonicResonator, Thermal
+        # Plant, etc), and `BP_*_Fragment_*_C` / `*FragmentA_Scan_C`
+        # are all POI-class blueprintable wreckage. Routed before the
+        # CREATURE_BP_RE check because some scannables (eg Tadpole_
+        # Fragment_01, BiobedFragmentA_Scan) match that regex too.
+        elif (
+            "Scannable" in cls
+            or "_Fragment" in cls
+            or cls.endswith("_Scan_C")
+            or "FragmentA_Scan" in cls
+            or "FragmentB_Scan" in cls
+        ):
             buckets["pois"].append(p)
         elif CREATURE_BP_RE.search(cls):
             buckets["creatures"].append(p)
