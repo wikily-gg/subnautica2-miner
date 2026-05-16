@@ -596,6 +596,18 @@ HIDE_CLASSES = frozenset({
     "BP_Lifepod_C",                       # editor placement: seafloor wreck
     "BP_StaticLifepod_Underwater_C",      # static-mesh duplicate of the wreck
     "BP_LifepodBay_Chunk_Hatch_C",        # hatch chunk near the wreck
+    # The world-partition cells expose the DeepStart Angel Comb at the
+    # correct world position, but ALL other Angel Comb instances either
+    # have null transforms or sit at the editor's near-origin debug
+    # area. Curated synthetic markers (4 of them, one per adaptation)
+    # are injected after the placement loop so the map shows a clean
+    # set of "Angel Comb -> Adaptation" pins instead of one real
+    # placement floating alone with no peer markers for the other
+    # adaptations.
+    "BP_AngelCombCore_C",
+    "BP_AngelCombCore_DeepStart_C",
+    "BP_AngelCombCore_AxumRuins_C",
+    "BP_HealthyAdultAngelComb_C",
 })
 
 
@@ -603,6 +615,8 @@ HIDE_CLASSES = frozenset({
 # tags must come before generic ones (e.g. Tadpole_HAUL before Tadpole).
 POI_GROUP = {
     "Beacon":             ("Beacon",          "#ffe066"),
+    "AngelComb":          ("Angel Comb",      "#c084fc"),
+    "HealthyAdultAngelComb": ("Angel Comb",   "#c084fc"),
     "Lifepod":            ("Lifepod",         "#ff7fbb"),
     "BioBed":             ("Lifepod",         "#ff7fbb"),
     "AbandonedBase":      ("Abandoned Base",  "#ffb74d"),
@@ -1035,6 +1049,84 @@ def build():
             },
         })
         group_counts[("pois", "Lifepod")] += 1
+        by_category_count["pois"] += 1
+
+    # ---------- synthetic Angel Comb markers tied to adaptations ----------
+    # Angel Combs are the alien plants the player touches to unlock body
+    # adaptations (Pressure Tolerance, Digestion, Heat Tolerance, Axum
+    # Vision). The world-partition placements are mostly null because
+    # the game spawns these dynamically inside Blight Nodes or runtime
+    # gameplay scripts. The one exception is the intro lifepod's
+    # `BP_AngelCombCore_DeepStart_C` at (-344748, 448028, -57976) -
+    # that one is a real top-level actor and we pull its exact position.
+    # For the other three known story combs we fall back to the cell-
+    # centroid (median of every world-scale RelativeLocation in the cell
+    # that hosts the AngelComb). Within ~10m of the actual mesh in the
+    # one cell we can verify against (DeepStart cell centroid sits 80
+    # cm from the confirmed DeepStart pos). Players cross-reference
+    # exact positions via the WoWQuest walkthrough linked on the
+    # Adaptations page.
+    ANGEL_COMBS = [
+        {
+            "name": "Angel Comb - Pressure Tolerance",
+            "adaptation": "Pressure Tolerance",
+            "subtitle": "First-touch comb inside the crashed lifepod intro sequence.",
+            "x": -344748, "y": 448028, "z": -57976,
+            "source": "BP_AngelCombCore_DeepStart_C",
+        },
+        {
+            "name": "Angel Comb - Digestion",
+            "adaptation": "Digestion",
+            "subtitle": "Healthy adult Angel Comb on the Coral Gardens plateaus.",
+            "x": -329947, "y": 419044, "z": -2519,
+            "source": "BP_HealthyAdultAngelComb_C (cell centroid)",
+        },
+        {
+            "name": "Angel Comb - Heat Tolerance",
+            "adaptation": "Heat Tolerance",
+            "subtitle": "Blight-shrouded juvenile combs. Requires the Sonic Resonator to clear the first and third flower puzzles.",
+            "x": -349416, "y": 421469, "z": -5184,
+            "source": "BP_AngelCombCore_C in BlightNode (cell centroid)",
+        },
+        {
+            "name": "Angel Comb - Axum Vision",
+            "adaptation": "Axum Vision",
+            "subtitle": "Central Comb in the Axum Ruins. Unlocked after all three Heat Tolerance flower puzzles.",
+            "x": -166250, "y": 436670, "z": -43534,
+            "source": "BP_AngelCombCore_AxumRuins_C (cell centroid)",
+        },
+    ]
+    for comb in ANGEL_COMBS:
+        cx, cy, cz = comb["x"], comb["y"], comb["z"]
+        if not (x_min - 1000 <= cx <= x_max + 1000
+                and y_min - 1000 <= cy <= y_max + 1000):
+            continue
+        if not point_in_polygon(cx, cy, outline_poly):
+            continue
+        cb_biome, cb_sub, cb_region = classify(cx, cy, cz)
+        feature_id += 1
+        features.append({
+            "type": "Feature",
+            "id": feature_id,
+            "geometry": {"type": "Point", "coordinates": [cx, cy]},
+            "properties": {
+                "cat": "pois",
+                "group": "Angel Comb",
+                "color": "#c084fc",
+                # Synthetic class so the popup can tell the player this
+                # is curated data, not an in-world actor placement.
+                "class": "BP_AngelComb_Synthetic_C",
+                "name": comb["name"],
+                "depth_m": round((-cz) / 100.0, 1) if cz < 0 else None,
+                "z": cz,
+                "biome": cb_biome,
+                "sub_region": cb_sub,
+                "region": cb_region,
+                "adaptation": comb["adaptation"],
+                "subtitle": comb["subtitle"],
+            },
+        })
+        group_counts[("pois", "Angel Comb")] += 1
         by_category_count["pois"] += 1
 
     # ---------- named cave entrances + dive locations from locations.json ----------

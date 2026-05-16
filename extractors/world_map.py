@@ -45,6 +45,15 @@ KEEP_SUBSTRINGS = (
     "AudioLog",
     "Audiolog",
     "AbandonedBase",
+    # Angel Combs are the alien plants the player touches to unlock the
+    # adaptation tree (Pressure Tolerance from the intro one, Digestion,
+    # Heat Resistance, Axum Vision). 5+ placements scattered across the
+    # Coral Gardens + Axum Ruins. BP_HealthyAdultAngelComb is the
+    # interactive variant; the BP_AngelCombCore_* (DeepStart / AxumRuins)
+    # are scripted story instances tied to specific adaptations.
+    "AngelComb",
+    "HealthyAdultAngelComb",
+    "AngelCombCore",
     # Scannable / Fragment placements unlock blueprints for the
     # matching item or vehicle. Each `BP_<Name>_Scannable_C` or
     # `BP_<Name>_Fragment_*_C` or older-convention `BP_<Name>_Scan_C`
@@ -264,7 +273,7 @@ def run(provider, max_cells: int | None = None) -> dict:
             buckets["loot"].append(p)
         elif any(k in cls for k in ("PrefabActor", "Beacon", "Terminal", "AudioLog",
                                     "Audiolog", "Lifepod", "AbandonedBase", "LightStick",
-                                    "Plinth", "Databank", "ScanData")):
+                                    "Plinth", "Databank", "ScanData", "AngelComb")):
             buckets["pois"].append(p)
         else:
             buckets["other"].append(p)
