@@ -605,15 +605,58 @@ POI_GROUP = {
 }
 
 
+# Matches `BP_<Name>_Scannable_C`, `BP_<Name>_Fragment_C`,
+# `BP_<Name>_Fragment_<NN>_C`, and `BP_<Name>FragmentA_Scan_C`.
+# Group `(1)` is the raw scannable name we humanize for the marker
+# group label and slugify for the item_slug link.
+_SCANNABLE_CLEAN = re.compile(
+    r"^BP_(.+?)(?:_Scannable|_Fragment(?:_\d+)?|FragmentA_Scan|FragmentB_Scan)_C$"
+)
+
+
+def scannable_info(cls: str):
+    """If `cls` is a Scannable/Fragment placement, return its
+    (group_label, marker_color, item_slug) tuple. Otherwise None.
+
+    Group label uses the "<Item Name> Fragment" pattern so the wiki
+    can detect them with a simple `/ Fragment$/` regex.  Slug is the
+    kebab-case form of the item name so the item detail page can
+    look up its own placements by `item_slug == item.urlSlug`.
+    """
+    m = _SCANNABLE_CLEAN.match(cls or "")
+    if not m:
+        return None
+    raw = m.group(1)
+    spaced = re.sub(r"_+", " ", raw).strip()
+    spaced = _CAMEL.sub(" ", spaced).strip()
+    spaced = re.sub(r"\s+", " ", spaced)
+    label = f"{spaced} Fragment" if spaced else "Fragment"
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", spaced).strip("-").lower()
+    return (label, "#bda4ff", slug)
+
+
+def is_scannable(cls: str) -> bool:
+    return scannable_info(cls) is not None
+
+
 def poi_group(cls: str):
     for tag, info in POI_GROUP.items():
         if tag in cls:
             return info
+    # Generic fragment / scannable fallback. Each gets its own
+    # "<Item Name> Fragment" group so the wiki can list them under
+    # Blueprint Sources and per-item pages can pin their spawn map.
+    sc = scannable_info(cls)
+    if sc:
+        return (sc[0], sc[1])
     return ("POI", "#ffd84d")
 
 
 # Static scannable / wreck actors that UE filed under the world_map
 # "creatures" bucket but that we want shown on the Landmarks (POI) tab.
+# Anything matching the `_Scannable_C` / `_Fragment_C` pattern is
+# promoted dynamically by `is_scannable()`; this tuple is kept for the
+# few non-pattern-matching legacy classes that pre-dated the rule.
 CREATURE_AS_POI_TAGS = (
     "Tadpole_HAUL_Fragment",
     "Tadpole_ScoutRay_Fragment",
@@ -839,7 +882,8 @@ def build():
             # so they show up on the Landmarks tab.
             items_in_cat = [
                 p for p in world_map["placements"].get("creatures", [])
-                if any(t in (p.get("class") or "") for t in CREATURE_AS_POI_TAGS)
+                if (any(t in (p.get("class") or "") for t in CREATURE_AS_POI_TAGS)
+                    or is_scannable(p.get("class") or ""))
             ]
             effective_cat = "pois"
         else:
@@ -883,7 +927,27 @@ def build():
 
             group_counts[(effective_cat, group)] += 1
 
+            # Fragment/Scannable markers carry an `item_slug` so the
+            # wiki's per-item detail page can query its own spawn
+            # locations without round-tripping the BP class name.
+            sc_info = scannable_info(cls)
+            item_slug = sc_info[2] if sc_info else None
+
             feature_id += 1
+            props = {
+                "cat": effective_cat,
+                "group": group,
+                "color": color,
+                "class": cls,
+                "name": name,
+                "depth_m": depth_m,
+                "z": z,
+                "biome": biome,
+                "sub_region": sub,
+                "region": region_name,
+            }
+            if item_slug:
+                props["item_slug"] = item_slug
             features.append({
                 "type": "Feature",
                 "id": feature_id,
@@ -892,18 +956,7 @@ def build():
                     # Leaflet CRS.Simple: latlng = (Y, X) ; we keep raw UE cm.
                     "coordinates": [x, y],
                 },
-                "properties": {
-                    "cat": effective_cat,
-                    "group": group,
-                    "color": color,
-                    "class": cls,
-                    "name": name,
-                    "depth_m": depth_m,
-                    "z": z,
-                    "biome": biome,
-                    "sub_region": sub,
-                    "region": region_name,
-                },
+                "properties": props,
             })
 
     # ---------- named cave entrances + dive locations from locations.json ----------

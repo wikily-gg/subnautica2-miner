@@ -45,6 +45,19 @@ KEEP_SUBSTRINGS = (
     "AudioLog",
     "Audiolog",
     "AbandonedBase",
+    # Scannable / Fragment placements unlock blueprints for the
+    # matching item or vehicle. Each `BP_<Name>_Scannable_C` or
+    # `BP_<Name>_Fragment_*_C` placement is a world spot players
+    # need to find with a Scanner. Without these substrings here,
+    # rebreather / improved fins / repair tool / processor / etc
+    # fragments fall through the filter and never reach
+    # `markers.geojson`, leaving the item detail pages with no
+    # spawn-location info.
+    "Scannable",
+    "_Fragment",
+    ".Fragment",
+    "FragmentA",
+    "FragmentB",
 )
 
 # Classes that we drop outright (low signal, high volume).
