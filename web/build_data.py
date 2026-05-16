@@ -1018,7 +1018,16 @@ def build():
                 # honest about provenance.
                 "class": "BP_Lifepod_Spawn_Synthetic_C",
                 "name": "Lifepod (Spawn)",
-                "depth_m": round((-spawn_z) / 100.0, 1),
+                # `depth_m: null` makes the frontend's depth slider skip
+                # this marker entirely (see LeafletInner: depth_m == null
+                # bypasses the [depthMin, depthMax] range check). Without
+                # this the marker disappears at the default settings -
+                # the player is standing 2.4m ABOVE sea level on the
+                # lifepod deck (z=+235 cm), and the depth slider clamps
+                # its min to 0, so a depth of -2.4 would be filtered
+                # out. The lifepod is a surface landmark, depth has no
+                # meaningful value to filter by.
+                "depth_m": None,
                 "z": spawn_z,
                 "biome": spawn_biome,
                 "sub_region": spawn_sub,
