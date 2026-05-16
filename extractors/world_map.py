@@ -241,6 +241,12 @@ def run(provider, max_cells: int | None = None) -> dict:
             buckets["caves"].append(p)
         elif "Resource" in cls or "WorldPopSpawned" in cls:
             buckets["resources"].append(p)
+        # `BP_*_Scannable_C` / `BP_*_Fragment_*_C` are always POI-class
+        # blueprintable wreckage. Route them before the CREATURE_BP_RE
+        # check because some scannables (Tadpole_Fragment_01, Tadpole_HAUL,
+        # BiobedFragmentA_Scan) match that regex too.
+        elif "Scannable" in cls or "_Fragment" in cls or "FragmentA_Scan" in cls or "FragmentB_Scan" in cls:
+            buckets["pois"].append(p)
         elif CREATURE_BP_RE.search(cls):
             buckets["creatures"].append(p)
         elif "Volume" in cls:
